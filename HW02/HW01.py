@@ -9,6 +9,7 @@ Program Assigment 2
 
 # import image module
 from PIL import Image
+import tensorflow as tf
 
 # prepare urls
 gUrl = "C:\\Users\\Yufei\\Desktop\\deep learning\\"
@@ -32,5 +33,8 @@ for im in range(nImgTrain):
     img1D = imgIm.getdata()
     # append to train dataset
     imgTrain.append(img1D)
+
+with sess in tf.Session:
+    
 
 
