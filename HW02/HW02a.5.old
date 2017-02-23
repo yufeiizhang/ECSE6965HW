@@ -1,0 +1,247 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+# pylint: disable=I0011,C0103,W0105,C0301
+
+'''
+Program Assigment 2
+1st question
+Matrix version
+Feb 22, 2017
+'''
+
+# import image module
+import random
+import pickle as pkl
+from PIL import Image
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+'''PRE DEFINED FUNCTIONS'''
+# plot weights
+def fun_pltWeights(weights, dim, save=False):
+    '''
+    As defined in question,
+    input weights is a tensor, (5,28^2+1)
+    and dim is the dimention to plt, from 0-4
+    '''
+    print("Plot Weight: ", dim)
+    # prepare a session
+    #sessP = tf.Session()
+    # cut weights
+    #cWeight = tf.reshape(weights[0:28**2, dim], [28, 28])
+    # run session
+    #sWeight = sessP.run(cWeight)
+    '''Use non-tensorflow method instead'''
+    # cut
+    weightD = weights[0:28**2, dim]
+    # reshape
+    weightC = weightD.reshape([28, 28])
+    # plt
+    plt.imshow(weightC)
+    plt.colorbar()
+    if save:
+        # image name
+        sImage = str(dim).zfill(2)
+        sImg = sImage+".jpg"
+        plt.savefig(sImg)
+    else:
+        plt.show()
+    # close session
+    #sessP.close()
+    plt.close()
+    return
+
+# output weights
+def fun_outWeight(weights):
+    '''output weights as file'''
+    # run session
+    sessW = tf.Session()
+    sWeights = sessW.run(weights)
+    print(sWeights)
+    filePointer = open("PickleWeight.txt", "wb")
+    pkl.dump(sWeights, filePointer)
+    filePointer.close()
+    return
+
+# input weights
+def fun_inWeight(file="PickleWeight.txt"):
+    '''input weights from file'''
+    weights = pkl.load(open(file, "rb"))
+    print(weights)
+    return weights
+
+# load data from image dataset
+def fun_loadImg(num, url="", digitNum=5):
+    '''
+    load data from image dataset
+    num is the input image number
+    url is the folder name of image dataset
+    '''
+    imgTrain = []
+    suffix = ".jpg"
+    # read individual image by loop
+    for im in range(num):
+        # construct string for image
+        nImage = im+1
+        sImage = str(nImage).zfill(digitNum)
+        # open image file
+        imgIm = Image.open(url+sImage+suffix)
+        imgIm = imgIm.convert("L")
+        # convert to list
+        img1d = imgIm.getdata()
+        # translate to list
+        img1D = [i for i in img1d]
+        # normalize
+        img1N = [i/255.0 for i in img1D]
+        # append to train dataset
+        imgTrain.append(img1N)
+        # append 1 to x vector
+    imgTrain = tf.transpose(imgTrain)
+    x1 = tf.ones([1, num], tf.float32)
+    ResultImgSet = tf.concat(0, [imgTrain, x1])
+    ResultImgSet = tf.transpose(ResultImgSet)
+    return ResultImgSet
+
+# load data from label dataset
+def fun_loadLabel(num, url="train_label.txt"):
+    '''
+    num is the input image number
+    url is the folder name of label dataset, default local training set
+    '''
+    # load data from train label set
+    file = open(url)
+    data = [[int(x) for x in p.split()] for p in file]
+    # reload
+    rData = [data[i] for i in range(num)]
+    # get rid of []s
+    rData = sum(rData, [])
+    # load in tensorflow
+    ResultLabSet = tf.constant(rData, tf.int32)
+    # rData-1 here for onehot
+    subOne = tf.ones([num], tf.int32)
+    ResultLabel4 = tf.subtract(ResultLabSet, subOne)
+    # to onehot
+    ResultLabel = tf.one_hot(ResultLabel4, 5, on_value=1, off_value=0)
+    ResultLabelf = tf.to_float(ResultLabel)
+    return ResultLabelf
+
+# batch Generator
+def fun_genBatch(batSize, dataL, X, Y):
+    '''random generate batch'''
+    # generate an unrepeated list
+    sel = random.sample(range(dataL), batSize)
+    # empty list
+    Xb = [X[i] for i in sel]
+    Yb = [Y[i] for i in sel]
+    # reshape batch
+    Yb2 = tf.reshape(Yb, [_batchSize_, _classNum_])
+    Xb2 = tf.reshape(Xb, [_batchSize_, 28**2+1])
+    return Xb2, Yb2
+
+def fun_thetaUpdate(weights, Xb, Yb, pEta, pLambda, batSize, classNum=5):
+    '''Update weights for k-class'''
+    # previous weights
+    weightOld = weights
+    # gradient terms
+    dWeight = fun_gradLoss(weights, Xb, Yb, batSize, classNum)
+    dL2Norm = fun_gradL2Norm(weights, pLambda)
+    # sum the gradient
+    op1 = tf.add(dL2Norm, dWeight)
+    # multiply hyper-parameter eta
+    op2 = tf.scalar_mul(-pEta, op1)
+    # update weights
+    weightNew = tf.add(weightOld, op2)
+    return weightNew
+
+# gradient for L2 norm
+def fun_gradL2Norm(weights, pLambda):
+    '''
+    calcaulate gradient for R(theta)
+    where R is a L2 norm function
+    pLambda is the hyperparameter
+    2*lambda*theta
+    '''
+    op1 = tf.scalar_mul(2*pLambda, weights)
+    return op1
+
+# calculate gradient as matrix
+def fun_gradLoss(weights, Xb, Yb, batSize, classNum=5):
+    '''
+    calculate loss gradient as matrix
+    re = XEXP-XTY, where
+    XTY = X^T * Y = sum{1:m}x[m]*y[m][k]
+    XEXP = sum{1:m}x[m]*expXWN
+    expXWN = frac{exp{theta x[m]}|_k}{exp{theta x[m]}|_all}
+    '''
+    XTY = tf.matmul(Xb, Yb, transpose_a=True)
+    Xweight = tf.matmul(Xb, weights)
+    # calculate exp(theta_k X[m]) for everyone
+    expXW = tf.exp(Xweight)
+    # sum for k class
+    SumExpXW = tf.reduce_sum(expXW, 1)
+    # calculate the fraction
+    expXWN = []
+    for i in range(classNum):
+        expXWN.append(tf.divide(expXW[:, i], SumExpXW))
+    tf.reshape(expXWN, [batSize, classNum])
+    XEXP = tf.matmul(Xb, expXWN, transpose_a=True, transpose_b=True)
+    reGrdLoss = tf.subtract(XEXP, XTY)
+    return reGrdLoss
+
+'''MAIN'''
+print("Finish Import")
+# session for all
+sess = tf.Session()
+
+# prepare urls
+gUrl = "C:\\Users\\Yufei\\Desktop\\deep learning\\"
+lUrl = "program assignment 2\\data_prog2\\"
+sTrain = "train_data\\"
+sLabel = "labels\\"
+slTrain = "train_label.txt"
+# url for Image Training dataset
+imgTUrl = gUrl+lUrl+sTrain
+labTUrl = gUrl+lUrl+sLabel+slTrain
+
+'''IMPORTANT PARAMETERS'''
+#nImgTrain = 25112
+nImgTrain = 25100
+_classNum_ = 5
+# iteration times and batch
+_itMax_ = 400
+_batchSize_ = 512
+# hyper parameter
+_Eta_ = 0.001
+_Lambda_ = 0.0005
+
+'''LOAD TRAIN DATA'''
+# load data from training dataset
+ImgTrain = fun_loadImg(nImgTrain, imgTUrl)
+# load label from training dataset
+lTrain = fun_loadLabel(nImgTrain, labTUrl)
+print("Finish Load Train Data")
+
+# generate weight
+weight = tf.ones([28**2+1, _classNum_], tf.float32)
+weight = tf.mul(0.01, weight)
+
+'''ITERATION'''
+for index in range(_itMax_):
+    # output every iteration
+    print("Iteration: ", index+1)
+    # get the batch
+    imgBatch, labBatch = fun_genBatch(_batchSize_, nImgTrain, ImgTrain, lTrain)
+    # Update weights for different class
+    weightN = fun_thetaUpdate(weight, imgBatch, labBatch, _Eta_, _Lambda_, _batchSize_, _classNum_)
+    # reshape the results (just ensure)
+    weight = tf.reshape(weightN, [28**2+1, _classNum_])
+
+'''OUTPUT'''
+# output weights
+fun_outWeight(weight)
+# reload weights
+w = fun_inWeight()
+# plot weights
+for index in range(_classNum_):
+    fun_pltWeights(w, index, True)
+
